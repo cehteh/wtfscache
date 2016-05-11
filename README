@@ -1,0 +1,36 @@
+I got annoyed searching for a *useable* network filesystem with local caching,
+and disconnected operation. So I hacked this redneck style bash script.
+
+This prototype uses sshfs and unionfs-fuse. Other setups (nfs, overlayfs) may
+be possible, but are not topic yet. Using fuse based filesystem has some
+advantages for developing as well drawback because of limited/lacking
+features. Bear with it. Nevertheless it aims to be useable as in making sure
+that no data gets lost or corrupted.
+
+
+== Features (some are planned)
+
+- Cache everything locally
+- Have a garbagge collector which manages the local cache
+- Pinning files locally
+- Disconnected operation with detached files and merging them later
+- Transparent data storage. If everything breaks, there are still plain files
+  on the disk!
+
+
+== Plan
+
+- Make it useable ASAP
+
+
+== Howto
+
+Read the source, Luke.
+
+== License
+
+DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+
+this license applies to this shell-script prototype implementation. Future
+more serious implementations (if ever happen) may use another Free Software
+License.
