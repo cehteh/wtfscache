@@ -113,6 +113,33 @@ function get ()
 }
 
 
+function drop ()
+{
+    local pin="$1"
+    if [[ "$pin" == '--pin' ]]; then
+            shift
+    fi
+
+    for i in "$@"; do
+        if [[ -f "$i" ]]; then
+                local file="${i##$mountpoint/}"
+                dbg "DROP ${file}"
+
+                [[ -f ".$mountpoint/cache/${file}" ]] && rm ".$mountpoint/cache/${file}"
+
+                if [[ -f ".$mountpoint/precious/${file}" ]]; then
+                        if [[ "$pin" == '--pin' ]]; then
+                                rm -f ".$mountpoint/precious/${file}"
+                        else
+                            dbg "PINNED ${file}"
+                        fi
+                fi
+        #PLANNED: else pattern?
+        fi
+    done
+}
+
+
 case "$1" in
 start)
     wtfscache_main
@@ -125,6 +152,10 @@ get)
 pin)
     shift
     get --pin "$@"
+    ;;
+drop)
+    shift
+    drop "$@"
     ;;
 EVENT)
     shift
