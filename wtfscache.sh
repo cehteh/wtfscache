@@ -1,17 +1,23 @@
 #!/bin/bash
 LC_ALL=C
 
+export WTFSCACHE
+export WTFSCACHEROOT
+export WTFSCACHEMOUNT
+export WTFSCACHEMETA
+export WTFSCACHETMP
+
 #DONE: start:: start the daemon
 #DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
 #DONE: get:: force caching the given files
 #DONE: drop:: files from the cache --pin drops pinned files
-
-#TODO: config loader
+#DONE: config loader
 
 #TODO: disconnect:: manual disconnected operation
 #TODO: connect:: reconnect after a (manual) disconnection
 #TODO: detach/local:: detach files from the remote, keep edits local
 
+#TODO: unpin:: precious -> cache
 #TODO: status:: print some infos
 #TODO: prune:: remove all traces of a file, including backups, also from master
 #TODO: logfile for files which need to be merged (automatically detached)
@@ -40,26 +46,27 @@ function disk_free ()
 
 function gc ()
 {
-    dbg "GC $(disk_free ".$mountpoint/cache/.")"
-    if [[ ! -f ".$mountpoint/$$.lst" ]] && (($(disk_free ".$mountpoint/cache/.") <= $min_free)); then
-            find ".$mountpoint/cache" -type f -not -name '*_HIDDEN~' -printf '%A@ %p\n' | sort -n  >".$mountpoint/$$.lst"
+    dbg "GC $(disk_free "$WTFSCACHEMETA/cache/.")"
+    if [[ ! -f "$WTFSCACHEMETA/$$.lst" ]] && (($(disk_free "$WTFSCACHEMETA/cache/.") <= $min_free)); then
+            find "$WTFSCACHEMETA/cache" -type f -not -name '*_HIDDEN~' -printf '%A@ %p\n' | sort -n  >"$WTFSCACHEMETA/$$.lst"
 
-            while (($(disk_free ".$mountpoint/cache/.") < $max_free)); do
+            while (($(disk_free "$WTFSCACHEMETA/cache/.") < $max_free)); do
                 read _ file || break
                 dbg "RM $file"
                 #FIXME: only when proven that file exist on remote
                 [[ -f $file ]] && rm "$file"
-            done <".$mountpoint/$$.lst"
+            done <"$WTFSCACHEMETA/$$.lst"
 
-            rm ".$mountpoint/$$.lst"
+            #TODO: prune empty dirs
+            rm "$WTFSCACHEMETA/$$.lst"
     fi
 }
 
 function copy_up ()
 {
-    if [[ ! ( -f ".$mountpoint/cache/${1##$mountpoint/}"
-           || -f ".$mountpoint/precious/${1##$mountpoint/}"
-           || -f ".$mountpoint/local/${1##$mountpoint/}" ) ]]; then
+    if [[ ! ( -f "$WTFSCACHEMETA/cache/${1##$WTFSCACHE/}"
+           || -f "$WTFSCACHEMETA/precious/${1##$WTFSCACHE/}"
+           || -f "$WTFSCACHEMETA/local/${1##$WTFSCACHE/}" ) ]]; then
             dbg "COPY_UP $1"
             touch -ac "$1"
             gc
@@ -69,35 +76,41 @@ function copy_up ()
 function commit ()
 {
     dbg "COMMIT $1"
-    local file="${1##$mountpoint/}"
-    mkdir -p ".$mountpoint/master/${file%/*}"
-    #TODO: if connected
-    cp --backup=t ".$mountpoint/cache/${file}" ".$mountpoint/master/${file}" &
+    local file="${1##$WTFSCACHE/}"
+    mkdir -p "$WTFSCACHEMETA/master/${file%/*}"
+    #TODO: if connected $verify
+    cp --backup="$backups" "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/master/${file}"
 }
 
 
 
 
 
-function wtfscache_main ()
+function wtfscache_start ()
 {
-    mountpoint="$1"
-    [[ -f ".$mountpoint/config" ]] || die "not a wtfscache"
-    source ".$mountpoint/config"
+    WTFSCACHE="$1"
+    WTFSCACHEROOT="${PWD}"
+    WTFSCACHEMOUNT="$WTFSCACHEROOT/$WTFSCACHE"
+    WTFSCACHEMETA="$WTFSCACHEROOT/.$WTFSCACHE"
+    WTFSCACHETMP="$WTFSCACHEROOT/.$WTFSCACHE"
 
-    sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" ".$mountpoint/master"
-    unionfs-fuse -o cow,use_ino ".$mountpoint/cache"=RW:".$mountpoint/precious"=RW:".$mountpoint/local"=RW:".$mountpoint/master"=RO "$mountpoint"
+    [[ -f "$WTFSCACHEMETA/config" ]] || die "not a wtfscache"
+    source "$WTFSCACHEMETA/config"
+
+    # max_files
+    sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master"
+    unionfs-fuse -o cow,use_ino "$WTFSCACHEMETA/cache"=RW:"$WTFSCACHEMETA/precious"=RW:"$WTFSCACHEMETA/local"=RW:"$WTFSCACHEMETA/master"=RO "$WTFSCACHE"
 
     trap : INT
 
     gc
 
     # loop? restart? what about new dirs?
-    inotifywait -m -r --format '%e %w%f' -e open,close_write "$mountpoint" | xargs -d '\n' -l -n1 $0 EVENT
+    inotifywait -m -r --format '%e %w%f' -e open,close_write "$WTFSCACHE" | xargs -d '\n' -l -P 32 -n1 $0 EVENT
 
     dbg "DONE"
-    fusermount -u -z "$mountpoint"
-    fusermount -u -z ".$mountpoint/master"
+    fusermount -u -z "$WTFSCACHE"
+    fusermount -u -z "$WTFSCACHEMETA/master"
 }
 
 
@@ -116,12 +129,16 @@ $2='${REPLY:-$3}'
 
 function wtfscache_init ()
 {
-    mountpoint="$1"
+    WTFSCACHE="$1"
+    WTFSCACHEROOT="${PWD}"
+    WTFSCACHEMOUNT="$WTFSCACHEROOT/$WTFSCACHE"
+    WTFSCACHEMETA="$WTFSCACHEROOT/.$WTFSCACHE"
+    WTFSCACHETMP="$WTFSCACHEROOT/.$WTFSCACHE"
 
-    mkdir -p "$mountpoint" ".$mountpoint/cache" ".$mountpoint/master" ".$mountpoint/precious" ".$mountpoint/local/.wtfscache"
-    [[ -f ".$mountpoint/local/.wtfscache/name" ]] || echo "$mountpoint" >".$mountpoint/local/.wtfscache/name"
+    mkdir -p "$WTFSCACHE" "$WTFSCACHEMETA/cache" "$WTFSCACHEMETA/master" "$WTFSCACHEMETA/precious" "$WTFSCACHEMETA/local/.wtfscache"
+    [[ -f "$WTFSCACHEMETA/local/.wtfscache/name" ]] || echo "$WTFSCACHE" >"$WTFSCACHEMETA/local/.wtfscache/name"
 
-    [[ -f ".$mountpoint/config" ]] || cat >".$mountpoint/config" <<EOF
+    [[ -f "$WTFSCACHEMETA/config" ]] || cat >"$WTFSCACHEMETA/config" <<EOF
 $(query 'Starting garbage collector when less then this MB space is free' min_free 1024)
 $(query 'Stopping the gc when this much MB space is free' max_free 2048)
 $(query "Master server as 'user@host:directory'" remote '')
@@ -130,8 +147,9 @@ $(query 'Startup state (connected/disconnected)' startup connected)
 EOF
 }
 
-function cdroot ()
+function setup ()
 {
+    local startdir="$PWD"
     cd "${1%/*}"
 
     while [[ "$PWD" != '/' && ! -f ".wtfscache/name" ]]; do
@@ -139,11 +157,18 @@ function cdroot ()
     done
 
     if [[ -f ".wtfscache/name" ]]; then
-            WTFSCACHEROOT="$PWD"
+            WTFSCACHE="$(<.wtfscache/name)"
+            WTFSCACHEROOT="${PWD%/*}"
+            WTFSCACHEMOUNT="$WTFSCACHEROOT/$WTFSCACHE"
+            WTFSCACHEMETA="$WTFSCACHEROOT/.$WTFSCACHE"
+            WTFSCACHETMP="$WTFSCACHEROOT/.$WTFSCACHE"
             cat ".wtfscache/name"
     else
-        die "not a wtfscache"
+        die "no wtfscache"
     fi
+
+    cd "$startdir"
+    source "$WTFSCACHEMETA/config"
 }
 
 function get ()
@@ -152,15 +177,16 @@ function get ()
     if [[ "$pin" == '--pin' ]]; then
             shift
     fi
+    setup "$1"
 
     for i in "$@"; do
         if [[ -f "$i" ]]; then
-                local file="${i##$mountpoint/}"
+                local file="${i##$WTFSCACHE/}"
                 copy_up "$i"
                 if [[ "$pin" == '--pin' ]]; then
                         dbg "PIN ${file}"
-                        mkdir -p ".$mountpoint/precious/${file%/*}"
-                        [[ -f ".$mountpoint/cache/${file}" ]] && mv ".$mountpoint/cache/${file}" ".$mountpoint/precious/${file}"
+                        mkdir -p "$WTFSCACHEMETA/precious/${file%/*}"
+                        [[ -f "$WTFSCACHEMETA/cache/${file}" ]] && mv "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/precious/${file}"
                 fi
         #PLANNED: else pattern?
         fi
@@ -174,17 +200,18 @@ function drop ()
     if [[ "$pin" == '--pin' ]]; then
             shift
     fi
+    setup "$1"
 
     for i in "$@"; do
         if [[ -f "$i" ]]; then
-                local file="${i##$mountpoint/}"
+                local file="${i##$WTFSCACHE/}"
                 dbg "DROP ${file}"
 
-                [[ -f ".$mountpoint/cache/${file}" ]] && rm ".$mountpoint/cache/${file}"
+                [[ -f "$WTFSCACHEMETA/cache/${file}" ]] && rm "$WTFSCACHEMETA/cache/${file}"
 
-                if [[ -f ".$mountpoint/precious/${file}" ]]; then
+                if [[ -f "$WTFSCACHEMETA/precious/${file}" ]]; then
                         if [[ "$pin" == '--pin' ]]; then
-                                rm -f ".$mountpoint/precious/${file}"
+                                rm -f "$WTFSCACHEMETA/precious/${file}"
                         else
                             dbg "PINNED ${file}"
                         fi
@@ -196,18 +223,13 @@ function drop ()
 
 
 case "$1" in
-TEST)
-    shift
-    cdroot $1
-    echo $WTFSCACHEROOT
-    ;;
 init)
     shift
     wtfscache_init "$@"
     ;;
 start)
     shift
-    wtfscache_main "$@"
+    wtfscache_start "$@"
     ;;
 get)
     shift
@@ -228,14 +250,17 @@ EVENT)
         :
         ;;
     "OPEN "*)
-        copy_up "${*##OPEN }" &
+        copy_up "${*##OPEN }"
         ;;
     "CLOSE_WRITE,CLOSE "*)
         commit "${*##CLOSE_WRITE,CLOSE }"
         ;;
     *)
-        dbg "unhandled $@"
+        die "unhandled event $@"
     esac
+    ;;
+*)
+    die "unknown command $1"
     ;;
 esac
 
