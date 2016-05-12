@@ -7,6 +7,7 @@ advantages for developing as well drawback because of limited/lacking
 features. Bear with it. Nevertheless it aims to be useable as in making sure
 that no data gets lost or corrupted.
 
+The topology for now is restricted to a single master server (remote). Later filesystems
 
 == Features (some are planned)
 
@@ -26,6 +27,30 @@ that no data gets lost or corrupted.
 == Howto
 
 Read the source, Luke.
+
+
+== Internals
+
+=== Directory structure
+
+For caching under 'test':
+
+ test/                   The user visible mountpoint of the cache
+ .test/                  Hidden dir with the internals
+ .test/config            configuration
+ .test/status            current status
+
+ .test/master/           mountpoint for the remote master filesystem
+ .test/local/            'detached' files which have no replica in master
+ .test/precious/         'pinned' files which should not be gc'ed
+ .test/cache/            cache area which gets gc'ed
+
+ .test/detached.log      log of files which got automatically detached
+
+
+later:
+ 2 cache stages to preseve original file locally (for merging)
+ test/mergefail.log     log of files which cant be automatically merged
 
 == License
 
