@@ -7,6 +7,12 @@ export WTFSCACHEMOUNT
 export WTFSCACHEMETA
 export WTFSCACHETMP
 
+export min_free
+export max_free
+export remote
+export backups
+export startup
+
 #DONE: start:: start the daemon
 #DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
 #DONE: get:: force caching the given files
