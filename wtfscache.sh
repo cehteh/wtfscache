@@ -6,21 +6,24 @@ max_free=38000
 remote="ct@wolke.pipapo.org:test"
 mountpoint=wolke
 
+#DONE: start:: start the daemon
 #DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
 #DONE: get:: force caching the given files
+#DONE: drop:: files from the cache --pin drops pinned files
 
-#TODO: drop/clean/gc:: files from the cache -f drops pinned files
+#TODO: config loader
+
 #TODO: connect:: reconnect after a (manual) disconnection
 #TODO: disconnect:: manual disconnected operation
 #TODO: detach/local:: detach files from the remote, keep edits local
 #TODO: logfile for files which need to be merged (automatically detached)
 #TODO: merge:: merge detached files back to the remote
 #TODO: status:: print some infos
-#TODO: start:: start the daemon
 #TODO: stop:: stop the daemon
 #TODO: init:: setup a template
 #TODO: ???:: propagate deleted files to the remote
 #TODO: undelete/undo/history:: work with backup files and whiteouts
+#TODO: clean/gc:: manual gc run
 
 function dbg ()
 {
