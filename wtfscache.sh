@@ -1,12 +1,26 @@
 #!/bin/bash
 LC_ALL=C
 
-min_free=37000
+min_free=37500
 max_free=38000
 remote="ct@wolke.pipapo.org:test"
 mountpoint=wolke
 
-#TODO: pin drop get disconnect detach connect merge status start stop clean gc_interval
+#DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
+#DONE: get:: force caching the given files
+
+#TODO: drop/clean/gc:: files from the cache -f drops pinned files
+#TODO: connect:: reconnect after a (manual) disconnection
+#TODO: disconnect:: manual disconnected operation
+#TODO: detach/local:: detach files from the remote, keep edits local
+#TODO: logfile for files which need to be merged (automatically detached)
+#TODO: merge:: merge detached files back to the remote
+#TODO: status:: print some infos
+#TODO: start:: start the daemon
+#TODO: stop:: stop the daemon
+#TODO: init:: setup a template
+#TODO: ???:: propagate deleted files to the remote
+#TODO: undelete/undo/history:: work with backup files and whiteouts
 
 function dbg ()
 {
@@ -37,51 +51,97 @@ function gc ()
 
 function copy_up ()
 {
-        if [[ ! -f ".$mountpoint/cache/${1##$mountpoint/}" ]]; then
-                dbg "COPY_UP $1"
-                touch -ac "$1" &
-                gc
-        fi
+    if [[ ! ( -f ".$mountpoint/cache/${1##$mountpoint/}"
+           || -f ".$mountpoint/precious/${1##$mountpoint/}"
+           || -f ".$mountpoint/local/${1##$mountpoint/}" ) ]]; then
+            dbg "COPY_UP $1"
+            touch -ac "$1"
+            gc
+    fi
 }
 
 function commit ()
 {
     dbg "COMMIT $1"
     local file="${1##$mountpoint/}"
-    mkdir -p ".$mountpoint/orig/${file%/*}"
+    mkdir -p ".$mountpoint/master/${file%/*}"
     #TODO: if connected
-    cp --backup=t ".$mountpoint/cache/${file}" ".$mountpoint/orig/${file}" &
+    cp --backup=t ".$mountpoint/cache/${file}" ".$mountpoint/master/${file}" &
 }
 
-if [[ "$1" == EVENT ]]; then
-        shift
-        case "$1" in
-        "OPEN,ISDIR "*)
-            :
-            ;;
-        "OPEN "*)
-            copy_up "${*##OPEN }"
-            ;;
-        "CLOSE_WRITE,CLOSE "*)
-            commit "${*##CLOSE_WRITE,CLOSE }"
-            ;;
-        *)
-            dbg "unhandled $@"
-        esac
-        exit 0
-fi
 
 
-mkdir -p "$mountpoint" ".$mountpoint/cache" ".$mountpoint/orig" ".$mountpoint/precious" ".$mountpoint/detached"
-sshfs -o  reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" ".$mountpoint/orig"
-unionfs-fuse -o cow ".$mountpoint/cache"=RW:".$mountpoint/orig"=RO "$mountpoint"
 
-trap : INT
 
-gc
+function wtfscache_main ()
+{
+    mkdir -p "$mountpoint" ".$mountpoint/cache" ".$mountpoint/master" ".$mountpoint/precious" ".$mountpoint/local"
+    sshfs -o  reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" ".$mountpoint/master"
+    unionfs-fuse -o cow ".$mountpoint/cache"=RW:".$mountpoint/precious"=RW:".$mountpoint/master"=RO "$mountpoint"
 
-inotifywait -m -r --format '%e %w%f' -e open,close_write "$mountpoint" | xargs -d '\n' -l -n1 $0 EVENT
+    trap : INT
 
-echo done
-fusermount -u -z "$mountpoint"
-fusermount -u -z ".$mountpoint/orig"
+    gc
+
+    inotifywait -m -r --format '%e %w%f' -e open,close_write "$mountpoint" | xargs -d '\n' -l -n1 $0 EVENT
+
+    dbg "DONE"
+    fusermount -u -z "$mountpoint"
+    fusermount -u -z ".$mountpoint/master"
+}
+
+
+function get ()
+{
+    local pin="$1"
+    if [[ "$pin" == '--pin' ]]; then
+            shift
+    fi
+
+    for i in "$@"; do
+        if [[ -f "$i" ]]; then
+                local file="${i##$mountpoint/}"
+                dbg "PIN ${file}"
+                copy_up "$i"
+                if [[ "$pin" == '--pin' ]]; then
+                        mkdir -p ".$mountpoint/precious/${file%/*}"
+                        [[ -f ".$mountpoint/cache/${file}" ]] && mv ".$mountpoint/cache/${file}" ".$mountpoint/precious/${file}"
+                fi
+        #PLANNED: else pattern?
+        fi
+    done
+}
+
+
+case "$1" in
+start)
+    wtfscache_main
+    exit 0
+    ;;
+get)
+    shift
+    get "$@"
+    ;;
+pin)
+    shift
+    get --pin "$@"
+    ;;
+EVENT)
+    shift
+    case "$1" in
+    "OPEN,ISDIR "*)
+        :
+        ;;
+    "OPEN "*)
+        copy_up "${*##OPEN }" &
+        ;;
+    "CLOSE_WRITE,CLOSE "*)
+        commit "${*##CLOSE_WRITE,CLOSE }"
+        ;;
+    *)
+        dbg "unhandled $@"
+    esac
+    ;;
+esac
+
+
