@@ -1,11 +1,6 @@
 #!/bin/bash
 LC_ALL=C
 
-min_free=37500
-max_free=38000
-remote="ct@wolke.pipapo.org:test"
-mountpoint=wolke
-
 #DONE: start:: start the daemon
 #DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
 #DONE: get:: force caching the given files
@@ -13,21 +8,29 @@ mountpoint=wolke
 
 #TODO: config loader
 
-#TODO: connect:: reconnect after a (manual) disconnection
 #TODO: disconnect:: manual disconnected operation
+#TODO: connect:: reconnect after a (manual) disconnection
 #TODO: detach/local:: detach files from the remote, keep edits local
+
+#TODO: status:: print some infos
+#TODO: prune:: remove all traces of a file, including backups, also from master
 #TODO: logfile for files which need to be merged (automatically detached)
 #TODO: merge:: merge detached files back to the remote
-#TODO: status:: print some infos
 #TODO: stop:: stop the daemon
 #TODO: init:: setup a template
-#TODO: ???:: propagate deleted files to the remote
+#TODO: ???:: propagate deleted files to the remote mode=writeback, local, deletes
 #TODO: undelete/undo/history:: work with backup files and whiteouts
 #TODO: clean/gc:: manual gc run
 
 function dbg ()
 {
     echo "$*" 1>&2
+}
+
+function die ()
+{
+    echo "$*" 1>&2
+    exit 1
 }
 
 function disk_free ()
@@ -42,7 +45,7 @@ function gc ()
             find ".$mountpoint/cache" -type f -not -name '*_HIDDEN~' -printf '%A@ %p\n' | sort -n  >".$mountpoint/$$.lst"
 
             while (($(disk_free ".$mountpoint/cache/.") < $max_free)); do
-                read _ file;
+                read _ file || break
                 dbg "RM $file"
                 #FIXME: only when proven that file exist on remote
                 [[ -f $file ]] && rm "$file"
@@ -78,14 +81,18 @@ function commit ()
 
 function wtfscache_main ()
 {
-    mkdir -p "$mountpoint" ".$mountpoint/cache" ".$mountpoint/master" ".$mountpoint/precious" ".$mountpoint/local"
-    sshfs -o  reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" ".$mountpoint/master"
-    unionfs-fuse -o cow ".$mountpoint/cache"=RW:".$mountpoint/precious"=RW:".$mountpoint/master"=RO "$mountpoint"
+    mountpoint="$1"
+    [[ -f ".$mountpoint/config" ]] || die "not a wtfscache"
+    source ".$mountpoint/config"
+
+    sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" ".$mountpoint/master"
+    unionfs-fuse -o cow,use_ino ".$mountpoint/cache"=RW:".$mountpoint/precious"=RW:".$mountpoint/local"=RW:".$mountpoint/master"=RO "$mountpoint"
 
     trap : INT
 
     gc
 
+    # loop? restart? what about new dirs?
     inotifywait -m -r --format '%e %w%f' -e open,close_write "$mountpoint" | xargs -d '\n' -l -n1 $0 EVENT
 
     dbg "DONE"
@@ -93,6 +100,51 @@ function wtfscache_main ()
     fusermount -u -z ".$mountpoint/master"
 }
 
+
+
+function query ()
+{
+    read -p "$1
+$2 = [$3] "
+    echo "# $1
+$2='${REPLY:-$3}'
+"
+}
+
+
+
+
+function wtfscache_init ()
+{
+    mountpoint="$1"
+
+    mkdir -p "$mountpoint" ".$mountpoint/cache" ".$mountpoint/master" ".$mountpoint/precious" ".$mountpoint/local/.wtfscache"
+    [[ -f ".$mountpoint/local/.wtfscache/name" ]] || echo "$mountpoint" >".$mountpoint/local/.wtfscache/name"
+
+    [[ -f ".$mountpoint/config" ]] || cat >".$mountpoint/config" <<EOF
+$(query 'Starting garbage collector when less then this MB space is free' min_free 1024)
+$(query 'Stopping the gc when this much MB space is free' max_free 2048)
+$(query "Master server as 'user@host:directory'" remote '')
+$(query 'Backup mode' backups numbered)
+$(query 'Startup state (connected/disconnected)' startup connected)
+EOF
+}
+
+function cdroot ()
+{
+    cd "${1%/*}"
+
+    while [[ "$PWD" != '/' && ! -f ".wtfscache/name" ]]; do
+        cd ..
+    done
+
+    if [[ -f ".wtfscache/name" ]]; then
+            WTFSCACHEROOT="$PWD"
+            cat ".wtfscache/name"
+    else
+        die "not a wtfscache"
+    fi
+}
 
 function get ()
 {
@@ -104,9 +156,9 @@ function get ()
     for i in "$@"; do
         if [[ -f "$i" ]]; then
                 local file="${i##$mountpoint/}"
-                dbg "PIN ${file}"
                 copy_up "$i"
                 if [[ "$pin" == '--pin' ]]; then
+                        dbg "PIN ${file}"
                         mkdir -p ".$mountpoint/precious/${file%/*}"
                         [[ -f ".$mountpoint/cache/${file}" ]] && mv ".$mountpoint/cache/${file}" ".$mountpoint/precious/${file}"
                 fi
@@ -144,9 +196,18 @@ function drop ()
 
 
 case "$1" in
+TEST)
+    shift
+    cdroot $1
+    echo $WTFSCACHEROOT
+    ;;
+init)
+    shift
+    wtfscache_init "$@"
+    ;;
 start)
-    wtfscache_main
-    exit 0
+    shift
+    wtfscache_main "$@"
     ;;
 get)
     shift

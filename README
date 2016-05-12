@@ -12,7 +12,7 @@ The topology for now is restricted to a single master server (remote). Later fil
 == Features (some are planned)
 
 - Cache everything locally
-- Have a garbagge collector which manages the local cache
+- Have a garbage collector which manages the local cache
 - Pinning files locally
 - Disconnected operation with detached files and merging them later
 - Transparent data storage. If everything breaks, there are still plain files
