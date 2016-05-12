@@ -26,7 +26,92 @@ The topology for now is restricted to a single master server (remote). Later fil
 
 == Howto
 
-Read the source, Luke.
+init <name> ::
+  creates a new cache dir and config
+
+start <name> ::
+  start the daemon
+
+stop <name> ::
+  stops the daemon
+
+pin <files..> ::
+  pin files to a 'precious' dir which doesnt get garbage collected
+
+get <files..> ::
+  fetches the given files into the cache
+
+drop <files> ::
+  removes files from the cache. With '--pin' as fist option, drops pinned files.
+
+
+// PLANNED:
+
+// disconnect <name> ::
+//   manual disconnected operation
+
+// connect <name> ::
+//   reconnect after a (manual) disconnection
+
+// detach <files..> ::
+//   detach files from the remote, keep edits local
+
+// status <name> ::
+//   print some infos
+
+// prune <files..> ::
+//   remove a file, including backups, also from master
+//   --master from master
+//   --backups including backups
+//   --all same as --master --backups
+
+// merge <files..> ::
+//   merge detached files back to the remote
+
+// undelete <files..> ::
+//   restores a deleted file
+
+// undo <files..> ::
+//   restores the last backup of files.
+
+// history <files> ::
+//   shows the edit history of files
+
+// gc <name> [--clean | size] ::
+//   manual gc run, until size MB space become available or
+//   clean the complete cache.
+
+=== Config
+
+min_free ::
+  Starting garbage collector when less then this MB space is free.
+
+max_free ::
+  Stopping the gc when this much MB space is free.
+
+remote ::
+  'user@host:directory' spec defining the master server.
+
+backups ::
+  how backups are done when commiting changes to the master (writes)
+
+  none :::
+    never make backups
+
+  numbered :::
+    make numbered backups
+
+  existing :::
+    numbered if numbered backups exist, simple otherwise
+
+  simple :::
+    make simple backups
+
+//Planned:
+//write=detach, backup
+//merge=auto,manual
+//delete=local,master
+//verify=strict,..
 
 
 == Internals
@@ -50,7 +135,25 @@ For caching under 'test':
 
 later:
  2 cache stages to preseve original file locally (for merging)
- test/mergefail.log     log of files which cant be automatically merged
+ test/mergefail.log      log of files which cant be automatically merged
+
+
+=== Variables
+
+WTFSCACHE ::
+  basename of the cache
+
+WTFSCACHEROOT ::
+  path to the cache root
+
+WTFSCACHEMOUNT ::
+  path where the visible user dir is mounted
+
+WTFSCACHEMETA ::
+  path for metadata
+
+WTFSCACHETMP ::
+  path for tempfiles
 
 == License
 
