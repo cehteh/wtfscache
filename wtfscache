@@ -189,12 +189,20 @@ function file_status
     [[ "$status" == 'connected' ]] && [[ -f "$WTFSCACHEMETA/master/$1" ]] && { echo "remote"; return; }
 }
 
+
+function normalize_filename ()
+{
+    local file="$(readlink -f "$1")"
+    echo "${file##$WTFSCACHEMOUNT/}"
+}
+
+
 function wtfscache_status ()
 {
     setup "$1"
     source "$WTFSCACHEMETA/status"
 
-    echo "Status for: $WTFSCACHEMOUNT"
+    echo "Mountpoint: $WTFSCACHEMOUNT"
     echo "State: $status"
     echo "Cached: $(du -sh "$WTFSCACHEMETA/cache" | awk '{print $1}')"
     echo "Pinned: $(du -sh "$WTFSCACHEMETA/precious" | awk '{print $1}')"
@@ -204,12 +212,11 @@ function wtfscache_status ()
     for i in "$@"; do
         if [[ -f "$i" ]]; then
                 echo
-                #FIXME: needs function for proper trim also get, drop etc
-                local file="${i##$WTFSCACHE/}"
+                local file="$(normalize_filename "$i")"
 
-                echo "File: $file"
-                echo "Location: $(file_status "$file")"
-                echo "Size: $(du -sh "$WTFSCACHEMOUNT/$file" | awk '{print $1}')"
+                echo "$file"
+                echo " Status: $(file_status "$file")"
+                echo " Size: $(du -sh "$WTFSCACHEMOUNT/$file" | awk '{print $1}')"
         fi
     done
 }
@@ -324,7 +331,7 @@ function get ()
 
     for i in "$@"; do
         if [[ -f "$i" ]]; then
-                local file="${i##$WTFSCACHE/}"
+                local file="$(normalize_filename "$i")"
                 copy_up "$i"
                 if [[ "$pin" == '--pin' ]]; then
                         dbg "PIN ${file}"
@@ -347,7 +354,7 @@ function drop ()
 
     for i in "$@"; do
         if [[ -f "$i" ]]; then
-                local file="${i##$WTFSCACHE/}"
+                local file="$(normalize_filename "$i")"
                 dbg "DROP ${file}"
 
                 [[ -f "$WTFSCACHEMETA/cache/${file}" ]] && rm "$WTFSCACHEMETA/cache/${file}"
