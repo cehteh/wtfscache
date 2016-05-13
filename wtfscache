@@ -25,6 +25,7 @@ export master_poll
 #DONE: connect:: reconnect after a (manual) disconnection
 #DONE: fix offline detection
 #DONE: init:: setup a template
+#DONE: status:: print some infos
 
 #v0.1:
 
@@ -48,7 +49,6 @@ export master_poll
 #PLANNED: verify level: before deleting: none, exists, compare
 
 #TODO: unpin:: precious -> cache
-#TODO: status:: print some infos
 #TODO: prune:: remove all traces of a file, including backups, also from master
 #TODO: ???:: propagate deleted files to the remote mode=writeback, local, deletes
 #TODO: undelete/undo/history:: work with backup files and whiteouts
@@ -90,7 +90,7 @@ function gc ()
 
 function check_connection ()
 {
-    if [[ "$status" == connected ]] && ! timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEMETA/master/."; then
+    if [[ "$status" == connected ]] && ! { timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEMETA/master/."; } 2>/dev/null ; then
             fusermount -u -z "$WTFSCACHEMETA/master"
             status=offline
             write_status
@@ -178,6 +178,40 @@ $(var status_time)
 $(var status)
 $(var pid)
 EOF
+}
+
+
+function file_status
+{
+    [[ -f "$WTFSCACHEMETA/cache/$1" ]] && { echo "cached"; return; }
+    [[ -f "$WTFSCACHEMETA/precious/$1" ]] && { echo "pinned"; return; }
+    [[ -f "$WTFSCACHEMETA/local/$1" ]] && { echo "detached"; return; }
+    [[ "$status" == 'connected' ]] && [[ -f "$WTFSCACHEMETA/master/$1" ]] && { echo "remote"; return; }
+}
+
+function wtfscache_status ()
+{
+    setup "$1"
+    source "$WTFSCACHEMETA/status"
+
+    echo "Status for: $WTFSCACHEMOUNT"
+    echo "State: $status"
+    echo "Cached: $(du -sh "$WTFSCACHEMETA/cache" | awk '{print $1}')"
+    echo "Pinned: $(du -sh "$WTFSCACHEMETA/precious" | awk '{print $1}')"
+    echo "Local: $(du -sh "$WTFSCACHEMETA/local" | awk '{print $1}')"
+    [[ "$status" == 'connected' ]] && echo "Remote: $(du -sh "$WTFSCACHEMETA/master" | awk '{print $1}')"
+
+    for i in "$@"; do
+        if [[ -f "$i" ]]; then
+                echo
+                #FIXME: needs function for proper trim also get, drop etc
+                local file="${i##$WTFSCACHE/}"
+
+                echo "File: $file"
+                echo "Location: $(file_status "$file")"
+                echo "Size: $(du -sh "$WTFSCACHEMOUNT/$file" | awk '{print $1}')"
+        fi
+    done
 }
 
 
@@ -271,7 +305,7 @@ function setup ()
             WTFSCACHEMOUNT="$WTFSCACHEROOT/$WTFSCACHE"
             WTFSCACHEMETA="$WTFSCACHEROOT/.$WTFSCACHE"
             WTFSCACHETMP="$WTFSCACHEROOT/.$WTFSCACHE"
-            cat ".wtfscache/name"
+            #cat ".wtfscache/name"
     else
         die "no wtfscache"
     fi
@@ -347,6 +381,10 @@ disconnect)
 connect)
     shift
     wtfscache_connect "$@"
+    ;;
+status)
+    shift
+    wtfscache_status "$@"
     ;;
 get)
     shift
