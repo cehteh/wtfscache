@@ -13,7 +13,7 @@ export remote
 export backups
 export startup
 export master_timeout
-export master_reconnect
+export master_poll
 
 #DONE: start:: start the daemon
 #DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
@@ -23,8 +23,7 @@ export master_reconnect
 #DONE: status file
 #DONE: disconnect:: manual disconnected operation
 #DONE: connect:: reconnect after a (manual) disconnection
-
-#TODO: fix offline detection
+#DONE: fix offline detection
 
 
 #TODO: detach/local:: detach files from the remote, keep edits local
@@ -76,13 +75,23 @@ function gc ()
 
 function check_connection ()
 {
-    source "$WTFSCACHEMETA/status"
     if [[ "$status" == connected ]] && ! timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEMETA/master/."; then
             fusermount -u -z "$WTFSCACHEMETA/master"
             status=offline
             write_status
+    elif [[ "$status" == offline ]]; then
+            if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master" >&/dev/null; then
+                    status=connected
+                    write_status
+            fi
     fi
-    # elif [[ "$status" == offline ]] .. try connecting
+}
+
+function poll_connection ()
+{
+    while sleep "$master_poll"; do
+        check_connection
+    done
 }
 
 function wtfscache_disconnect ()
@@ -100,7 +109,7 @@ function wtfscache_connect ()
     source "$WTFSCACHEMETA/status"
 
     if [[ "$status" != connected ]]; then
-            if timeout -s9 ${master_timeout} sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master"; then
+            if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master"; then
                 status=connected
             else
                 status=offline
@@ -111,6 +120,7 @@ function wtfscache_connect ()
 
 function copy_up ()
 {
+    source "$WTFSCACHEMETA/status"
     check_connection
 
     if [[ "$status" == connected && ! ( -f "$WTFSCACHEMETA/cache/${1##$WTFSCACHE/}"
@@ -124,6 +134,7 @@ function copy_up ()
 
 function commit ()
 {
+    source "$WTFSCACHEMETA/status"
     check_connection
 
     if [[ "$status" == connected ]]; then
@@ -172,7 +183,7 @@ function wtfscache_start ()
     unionfs-fuse -o cow,use_ino "$WTFSCACHEMETA/cache"=RW:"$WTFSCACHEMETA/precious"=RW:"$WTFSCACHEMETA/local"=RW:"$WTFSCACHEMETA/master"=RO "$WTFSCACHE"
 
     if [[ "$startup" == 'connected' ]]; then
-            timeout -s9 ${master_timeout} sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master" || status=offline
+            sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master" || status=offline
     fi
 
     write_status
@@ -180,6 +191,9 @@ function wtfscache_start ()
     trap : INT
 
     gc
+
+    #TODO: no polling when disconnected
+    poll_connection &
 
     # loop? restart? what about new dirs?
     inotifywait -m -r --format '%e %w%f' -e open,close_write "$WTFSCACHE" | xargs -d '\n' -l -P 32 -n1 $0 EVENT
@@ -222,7 +236,7 @@ $(query "Master server as 'user@host:directory'" remote '')
 $(query 'Backup mode' backups numbered)
 $(query 'Startup state (connected/disconnected)' startup connected)
 $(query 'Timeout for for connecting master' master_timeout 5)
-$(query 'Timeout for for reconnecting to master' master_reconnect 60)
+$(query 'Timeout for for polling master' master_poll 10)
 EOF
 }
 
