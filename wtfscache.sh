@@ -12,15 +12,21 @@ export max_free
 export remote
 export backups
 export startup
+export master_timeout
+export master_reconnect
 
 #DONE: start:: start the daemon
 #DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
 #DONE: get:: force caching the given files
 #DONE: drop:: files from the cache --pin drops pinned files
 #DONE: config loader
+#DONE: status file
+#DONE: disconnect:: manual disconnected operation
+#DONE: connect:: reconnect after a (manual) disconnection
 
-#TODO: disconnect:: manual disconnected operation
-#TODO: connect:: reconnect after a (manual) disconnection
+#TODO: fix offline detection
+
+
 #TODO: detach/local:: detach files from the remote, keep edits local
 
 #TODO: unpin:: precious -> cache
@@ -68,9 +74,46 @@ function gc ()
     fi
 }
 
+function check_connection ()
+{
+    source "$WTFSCACHEMETA/status"
+    if [[ "$status" == connected ]] && ! timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEMETA/master/."; then
+            fusermount -u -z "$WTFSCACHEMETA/master"
+            status=offline
+            write_status
+    fi
+    # elif [[ "$status" == offline ]] .. try connecting
+}
+
+function wtfscache_disconnect ()
+{
+    setup "$1"
+    source "$WTFSCACHEMETA/status"
+    fusermount -u -z "$WTFSCACHEMETA/master"
+    status=disconnected
+    write_status
+}
+
+function wtfscache_connect ()
+{
+    setup "$1"
+    source "$WTFSCACHEMETA/status"
+
+    if [[ "$status" != connected ]]; then
+            if timeout -s9 ${master_timeout} sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master"; then
+                status=connected
+            else
+                status=offline
+            fi
+    fi
+    write_status
+}
+
 function copy_up ()
 {
-    if [[ ! ( -f "$WTFSCACHEMETA/cache/${1##$WTFSCACHE/}"
+    check_connection
+
+    if [[ "$status" == connected && ! ( -f "$WTFSCACHEMETA/cache/${1##$WTFSCACHE/}"
            || -f "$WTFSCACHEMETA/precious/${1##$WTFSCACHE/}"
            || -f "$WTFSCACHEMETA/local/${1##$WTFSCACHE/}" ) ]]; then
             dbg "COPY_UP $1"
@@ -81,14 +124,34 @@ function copy_up ()
 
 function commit ()
 {
-    dbg "COMMIT $1"
-    local file="${1##$WTFSCACHE/}"
-    mkdir -p "$WTFSCACHEMETA/master/${file%/*}"
-    #TODO: if connected $verify
-    cp --backup="$backups" "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/master/${file}"
+    check_connection
+
+    if [[ "$status" == connected ]]; then
+            dbg "COMMIT $1"
+            local file="${1##$WTFSCACHE/}"
+            mkdir -p "$WTFSCACHEMETA/master/${file%/*}"
+            cp --backup="$backups" "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/master/${file}"
+    fi
+    # else detach + log
 }
 
 
+function var ()
+{
+    echo "$1='${!1}'"
+}
+
+
+function write_status ()
+{
+    status_time=$(date -u +%s)
+    dbg "STATUS $status"
+    cat >"$WTFSCACHETMP/status" <<EOF
+$(var status_time)
+$(var status)
+$(var pid)
+EOF
+}
 
 
 
@@ -103,9 +166,16 @@ function wtfscache_start ()
     [[ -f "$WTFSCACHEMETA/config" ]] || die "not a wtfscache"
     source "$WTFSCACHEMETA/config"
 
-    # max_files
-    sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master"
+    pid="$$"
+    status="$startup"
+
     unionfs-fuse -o cow,use_ino "$WTFSCACHEMETA/cache"=RW:"$WTFSCACHEMETA/precious"=RW:"$WTFSCACHEMETA/local"=RW:"$WTFSCACHEMETA/master"=RO "$WTFSCACHE"
+
+    if [[ "$startup" == 'connected' ]]; then
+            timeout -s9 ${master_timeout} sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master" || status=offline
+    fi
+
+    write_status
 
     trap : INT
 
@@ -127,6 +197,7 @@ function query ()
 $2 = [$3] "
     echo "# $1
 $2='${REPLY:-$3}'
+
 "
 }
 
@@ -150,6 +221,8 @@ $(query 'Stopping the gc when this much MB space is free' max_free 2048)
 $(query "Master server as 'user@host:directory'" remote '')
 $(query 'Backup mode' backups numbered)
 $(query 'Startup state (connected/disconnected)' startup connected)
+$(query 'Timeout for for connecting master' master_timeout 5)
+$(query 'Timeout for for reconnecting to master' master_reconnect 60)
 EOF
 }
 
@@ -236,6 +309,14 @@ init)
 start)
     shift
     wtfscache_start "$@"
+    ;;
+disconnect)
+    shift
+    wtfscache_disconnect "$@"
+    ;;
+connect)
+    shift
+    wtfscache_connect "$@"
     ;;
 get)
     shift

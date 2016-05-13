@@ -155,6 +155,15 @@ WTFSCACHEMETA ::
 WTFSCACHETMP ::
   path for tempfiles
 
+
+status ::
+  connected :::
+    connected to master
+  disconnected :::
+    manually disconnected from master
+  offline :::
+    lost connection to master, will automatically reconnect
+
 == License
 
 DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
