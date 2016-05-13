@@ -24,17 +24,32 @@ export master_poll
 #DONE: disconnect:: manual disconnected operation
 #DONE: connect:: reconnect after a (manual) disconnection
 #DONE: fix offline detection
+#DONE: init:: setup a template
+
+#v0.1:
 
 
+#TODO: detach offline commits
 #TODO: detach/local:: detach files from the remote, keep edits local
+
+
+#TODO: logfile for files which need to be merged (automatically detached)
+#TODO: merge:: merge detached files back to the remote
+#TODO: stop:: stop the daemon
+
+#PLANNED: global cache, move metadata to ~/.wtfscache/<md5sum>/
+#PLANNED: global config for gc etc
+
+
+#later:
+
+#PLANNED: ignore patterns for copy_up, config copyup behaviour
+#PLANNED: gc pinned files for min_free
+#PLANNED: verify level: before deleting: none, exists, compare
 
 #TODO: unpin:: precious -> cache
 #TODO: status:: print some infos
 #TODO: prune:: remove all traces of a file, including backups, also from master
-#TODO: logfile for files which need to be merged (automatically detached)
-#TODO: merge:: merge detached files back to the remote
-#TODO: stop:: stop the daemon
-#TODO: init:: setup a template
 #TODO: ???:: propagate deleted files to the remote mode=writeback, local, deletes
 #TODO: undelete/undo/history:: work with backup files and whiteouts
 #TODO: clean/gc:: manual gc run
@@ -137,6 +152,7 @@ function commit ()
     source "$WTFSCACHEMETA/status"
     check_connection
 
+    #TODO: && file != detached
     if [[ "$status" == connected ]]; then
             dbg "COMMIT $1"
             local file="${1##$WTFSCACHE/}"
