@@ -28,14 +28,11 @@ export master_poll
 #DONE: status:: print some infos
 #DONE: detach/local:: detach files from the remote, keep edits local
 #DONE: merge:: merge detached files back to the remote
+#DONE: detach offline commits
+#DONE: automerge:: merge detached files back to the remote
+#DONE: logfile for files which need to be merged (automatically detached)
 
 #v0.1:
-
-
-#TODO: detach offline commits
-#TODO: automerge:: merge detached files back to the remote
-
-#TODO: logfile for files which need to be merged (automatically detached)
 
 #TODO: stop:: stop the daemon
 
@@ -57,6 +54,7 @@ export master_poll
 #TODO: clean/gc:: manual gc run
 #TODO: caching/copy_up configureable, only cow by pattern?
 #PLANNED: --connect/--disconnect option for start
+#FIXME: filenames with leading/trailing spaces
 
 function dbg ()
 {
@@ -103,6 +101,7 @@ function check_connection ()
             if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master" >&/dev/null; then
                     status=connected
                     write_status
+                    auto_merge
             fi
     fi
 }
@@ -134,6 +133,7 @@ function wtfscache_connect ()
             fi
     fi
     write_status
+    auto_merge
 }
 
 function copy_up ()
@@ -175,6 +175,16 @@ function commit ()
             elif [[ "$merge" == '--merge' && -f "$WTFSCACHEMETA/local/${1}" ]]; then
                     cp --backup="$backups" "$WTFSCACHEMETA/local/${1}" "$WTFSCACHEMETA/master/${1}"
             fi
+    else
+        if [[ -f "$WTFSCACHEMETA/cache/${1}" ]]; then
+                echo "cached ${1}" >>"$WTFSCACHEMETA/detached.log"
+        elif [[ -f "$WTFSCACHEMETA/precious/${1}" ]]; then
+                echo "pinned ${1}" >>"$WTFSCACHEMETA/detached.log"
+        else
+            return
+        fi
+        dbg "AUTO_DETACH $1"
+        detach_file "$1"
     fi
 }
 
@@ -268,6 +278,7 @@ function wtfscache_start ()
 
     #TODO: no polling when disconnected
     poll_connection &
+    [[ "$status" == 'connected' ]] && auto_merge &
 
     # loop? restart? what about new dirs?
     inotifywait -m -r --format '%e %w%f' -e open,close_write "$WTFSCACHE" | xargs -d '\n' -l -P 32 -n1 $0 EVENT
@@ -404,6 +415,23 @@ function drop ()
 }
 
 
+function detach_file ()
+{
+    dbg "DETACH ${1}"
+    local dir="/${1}"
+    dir="${dir%/*}"
+
+    mkdir -p "$WTFSCACHEMETA/local/$dir"
+    if [[ -f "$WTFSCACHEMETA/cache/${1}" ]]; then
+            mv "$WTFSCACHEMETA/cache/${1}" "$WTFSCACHEMETA/local/${1}"
+    elif [[ -f "$WTFSCACHEMETA/precious/${1}" ]]; then
+            mv "$WTFSCACHEMETA/precious/${1}" "$WTFSCACHEMETA/local/${1}"
+    else
+        dbg "NOT_AVAILABLE ${1}"
+    fi
+}
+
+
 function detach ()
 {
     setup "$1"
@@ -412,18 +440,7 @@ function detach ()
         local file="$(normalize_filename "$i")"
         if [[ -f "$WTFSCACHEMOUNT/$file" && ! -f "$WTFSCACHEMETA/local/${file}" ]]; then
                 copy_up "$file"
-                dbg "DETACH ${file}"
-                local dir="/${file}"
-                dir="${dir%/*}"
-
-                mkdir -p "$WTFSCACHEMETA/local/$dir"
-                if [[ -f "$WTFSCACHEMETA/cache/${file}" ]]; then
-                        mv "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/local/${file}"
-                elif [[ -f "$WTFSCACHEMETA/precious/${file}" ]]; then
-                        mv "$WTFSCACHEMETA/precious/${file}" "$WTFSCACHEMETA/local/${file}"
-                else
-                    dbg "NOT_AVAILABLE ${file}"
-                fi
+                detach_file "$file"
         #PLANNED: else pattern?
         fi
     done
@@ -439,6 +456,24 @@ function merge ()
                 commit --merge "$file"
         fi
     done
+}
+
+
+function auto_merge ()
+{
+    if [[ -f "$WTFSCACHEMETA/detached.log" ]]; then
+            while read where file; do
+                if [[ -f "$WTFSCACHEMETA/local/${file}" ]]; then
+                        commit --merge "$file"
+                        if [[ "$where" == 'cached' ]]; then
+                                mv "$WTFSCACHEMETA/local/${file}" "$WTFSCACHEMETA/cache/${file}"
+                        elif [[ "$where" == 'pinned' ]]; then
+                                mv "$WTFSCACHEMETA/local/${file}" "$WTFSCACHEMETA/precious/${file}"
+                        fi
+                fi
+            done <"$WTFSCACHEMETA/detached.log"
+            rm "$WTFSCACHEMETA/detached.log"
+    fi
 }
 
 
