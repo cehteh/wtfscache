@@ -31,10 +31,9 @@ export master_poll
 #DONE: detach offline commits
 #DONE: automerge:: merge detached files back to the remote
 #DONE: logfile for files which need to be merged (automatically detached)
+#DONE: stop:: stop command
 
 #v0.1:
-
-#TODO: stop:: stop the daemon
 
 #PLANNED: global cache, move metadata to ~/.wtfscache/<md5sum>/
 #PLANNED: global config for gc etc
@@ -485,6 +484,11 @@ init)
 start)
     shift
     wtfscache_start "$@"
+    ;;
+stop)
+    shift
+    setup "$1"
+    kill -INT -"$pid"
     ;;
 disconnect)
     shift
