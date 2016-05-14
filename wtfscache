@@ -27,13 +27,16 @@ export master_poll
 #DONE: init:: setup a template
 #DONE: status:: print some infos
 #DONE: detach/local:: detach files from the remote, keep edits local
+#DONE: merge:: merge detached files back to the remote
 
 #v0.1:
 
+
 #TODO: detach offline commits
+#TODO: automerge:: merge detached files back to the remote
+
 #TODO: logfile for files which need to be merged (automatically detached)
 
-#TODO: merge:: merge detached files back to the remote
 #TODO: stop:: stop the daemon
 
 #PLANNED: global cache, move metadata to ~/.wtfscache/<md5sum>/
@@ -148,11 +151,16 @@ function copy_up ()
 
 function commit ()
 {
-    [[ -f "$WTFSCACHEMETA/local/${1}" ]] && return
+    local merge="$1"
+    if [[ "$merge" == '--merge' ]]; then
+            shift
+            dbg "MERGE $1"
+    fi
+
+    [[ "$merge" != '--merge' && -f "$WTFSCACHEMETA/local/${1}" ]] && return
 
     check_connection
 
-    #TODO: && file != detached
     if [[ "$status" == connected ]]; then
             dbg "COMMIT $1"
             local dir="/${1}"
@@ -164,9 +172,10 @@ function commit ()
                     cp --backup="$backups" "$WTFSCACHEMETA/cache/${1}" "$WTFSCACHEMETA/master/${1}"
             elif [[ -f "$WTFSCACHEMETA/precious/${1}" ]]; then
                     cp --backup="$backups" "$WTFSCACHEMETA/precious/${1}" "$WTFSCACHEMETA/master/${1}"
+            elif [[ "$merge" == '--merge' && -f "$WTFSCACHEMETA/local/${1}" ]]; then
+                    cp --backup="$backups" "$WTFSCACHEMETA/local/${1}" "$WTFSCACHEMETA/master/${1}"
             fi
     fi
-    # else detach + log
 }
 
 
@@ -221,7 +230,7 @@ function wtfscache_status ()
                 local file="$(normalize_filename "$i")"
 
                 echo "$file"
-                echo " Status: $(file_status "$file")"
+                echo " Status: $(file_status "$file")" #TODO: unmerged
                 echo " Size: $(du -sh "$WTFSCACHEMOUNT/$file" | awk '{print $1}')"
         fi
     done
@@ -381,6 +390,14 @@ function drop ()
                             dbg "PINNED ${file}"
                         fi
                 fi
+
+                if [[ -f "$WTFSCACHEMETA/local/${file}" ]]; then
+                        if cmp "$WTFSCACHEMETA/master/${file}" "$WTFSCACHEMETA/local/${file}" >&/dev/null; then
+                                rm -f "$WTFSCACHEMETA/local/${file}"
+                        else
+                            dbg "UNMERGED ${file}"
+                        fi
+                fi
         #PLANNED: else pattern?
         fi
     done
@@ -408,6 +425,18 @@ function detach ()
                     dbg "NOT_AVAILABLE ${file}"
                 fi
         #PLANNED: else pattern?
+        fi
+    done
+}
+
+function merge ()
+{
+    setup "$1"
+
+    for i in "$@"; do
+        local file="$(normalize_filename "$i")"
+        if [[ -f "$WTFSCACHEMETA/local/${file}" ]]; then
+                commit --merge "$file"
         fi
     done
 }
@@ -445,6 +474,10 @@ pin)
 detach)
     shift
     detach "$@"
+    ;;
+merge)
+    shift
+    merge "$@"
     ;;
 drop)
     shift
