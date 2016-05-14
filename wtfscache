@@ -26,15 +26,13 @@ export master_poll
 #DONE: fix offline detection
 #DONE: init:: setup a template
 #DONE: status:: print some infos
+#DONE: detach/local:: detach files from the remote, keep edits local
 
 #v0.1:
 
-
 #TODO: detach offline commits
-#TODO: detach/local:: detach files from the remote, keep edits local
-
-
 #TODO: logfile for files which need to be merged (automatically detached)
+
 #TODO: merge:: merge detached files back to the remote
 #TODO: stop:: stop the daemon
 
@@ -44,6 +42,7 @@ export master_poll
 
 #later:
 
+#PLANNED: config for merge (auto/manual)
 #PLANNED: ignore patterns for copy_up, config copyup behaviour
 #PLANNED: gc pinned files for min_free
 #PLANNED: verify level: before deleting: none, exists, compare
@@ -53,6 +52,8 @@ export master_poll
 #TODO: ???:: propagate deleted files to the remote mode=writeback, local, deletes
 #TODO: undelete/undo/history:: work with backup files and whiteouts
 #TODO: clean/gc:: manual gc run
+#TODO: caching/copy_up configureable, only cow by pattern?
+#PLANNED: --connect/--disconnect option for start
 
 function dbg ()
 {
@@ -90,6 +91,7 @@ function gc ()
 
 function check_connection ()
 {
+    source "$WTFSCACHEMETA/status"
     if [[ "$status" == connected ]] && ! { timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEMETA/master/."; } 2>/dev/null ; then
             fusermount -u -z "$WTFSCACHEMETA/master"
             status=offline
@@ -112,7 +114,6 @@ function poll_connection ()
 function wtfscache_disconnect ()
 {
     setup "$1"
-    source "$WTFSCACHEMETA/status"
     fusermount -u -z "$WTFSCACHEMETA/master"
     status=disconnected
     write_status
@@ -121,7 +122,6 @@ function wtfscache_disconnect ()
 function wtfscache_connect ()
 {
     setup "$1"
-    source "$WTFSCACHEMETA/status"
 
     if [[ "$status" != connected ]]; then
             if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEMETA/master"; then
@@ -135,29 +135,36 @@ function wtfscache_connect ()
 
 function copy_up ()
 {
-    source "$WTFSCACHEMETA/status"
     check_connection
 
-    if [[ "$status" == connected && ! ( -f "$WTFSCACHEMETA/cache/${1##$WTFSCACHE/}"
-           || -f "$WTFSCACHEMETA/precious/${1##$WTFSCACHE/}"
-           || -f "$WTFSCACHEMETA/local/${1##$WTFSCACHE/}" ) ]]; then
+    if [[ "$status" == connected && ! ( -f "$WTFSCACHEMETA/cache/${1}"
+           || -f "$WTFSCACHEMETA/precious/${1}"
+           || -f "$WTFSCACHEMETA/local/${1}" ) ]]; then
             dbg "COPY_UP $1"
-            touch -ac "$1"
+            touch -ac "$WTFSCACHEMOUNT/$1"
             gc
     fi
 }
 
 function commit ()
 {
-    source "$WTFSCACHEMETA/status"
+    [[ -f "$WTFSCACHEMETA/local/${1}" ]] && return
+
     check_connection
 
     #TODO: && file != detached
     if [[ "$status" == connected ]]; then
             dbg "COMMIT $1"
-            local file="${1##$WTFSCACHE/}"
-            mkdir -p "$WTFSCACHEMETA/master/${file%/*}"
-            cp --backup="$backups" "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/master/${file}"
+            local dir="/${1}"
+            dir="${dir%/*}"
+
+            mkdir -p "$WTFSCACHEMETA/master/$dir"
+
+            if [[ -f "$WTFSCACHEMETA/cache/${1}" ]]; then
+                    cp --backup="$backups" "$WTFSCACHEMETA/cache/${1}" "$WTFSCACHEMETA/master/${1}"
+            elif [[ -f "$WTFSCACHEMETA/precious/${1}" ]]; then
+                    cp --backup="$backups" "$WTFSCACHEMETA/precious/${1}" "$WTFSCACHEMETA/master/${1}"
+            fi
     fi
     # else detach + log
 }
@@ -192,7 +199,7 @@ function file_status
 
 function normalize_filename ()
 {
-    local file="$(readlink -f "$1")"
+    local file="$(readlink -m "$1")"
     echo "${file##$WTFSCACHEMOUNT/}"
 }
 
@@ -200,7 +207,6 @@ function normalize_filename ()
 function wtfscache_status ()
 {
     setup "$1"
-    source "$WTFSCACHEMETA/status"
 
     echo "Mountpoint: $WTFSCACHEMOUNT"
     echo "State: $status"
@@ -245,6 +251,8 @@ function wtfscache_start ()
 
     write_status
 
+    cd "$WTFSCACHEROOT"
+
     trap : INT
 
     gc
@@ -255,9 +263,12 @@ function wtfscache_start ()
     # loop? restart? what about new dirs?
     inotifywait -m -r --format '%e %w%f' -e open,close_write "$WTFSCACHE" | xargs -d '\n' -l -P 32 -n1 $0 EVENT
 
-    dbg "DONE"
+    dbg "
+DONE"
     fusermount -u -z "$WTFSCACHE"
-    fusermount -u -z "$WTFSCACHEMETA/master"
+    source "$WTFSCACHEMETA/status"
+    [[ "$status" == 'connected' ]] && fusermount -u -z "$WTFSCACHEMETA/master"
+    rm "$WTFSCACHEMETA/status"
 }
 
 
@@ -312,13 +323,13 @@ function setup ()
             WTFSCACHEMOUNT="$WTFSCACHEROOT/$WTFSCACHE"
             WTFSCACHEMETA="$WTFSCACHEROOT/.$WTFSCACHE"
             WTFSCACHETMP="$WTFSCACHEROOT/.$WTFSCACHE"
-            #cat ".wtfscache/name"
     else
-        die "no wtfscache"
+        die "no wtfscache or not started"
     fi
 
     cd "$startdir"
     source "$WTFSCACHEMETA/config"
+    source "$WTFSCACHEMETA/status"
 }
 
 function get ()
@@ -327,15 +338,18 @@ function get ()
     if [[ "$pin" == '--pin' ]]; then
             shift
     fi
+
     setup "$1"
 
     for i in "$@"; do
-        if [[ -f "$i" ]]; then
-                local file="$(normalize_filename "$i")"
-                copy_up "$i"
+        local file="$(normalize_filename "$i")"
+        if [[ -f "$WTFSCACHEMOUNT/$file" ]]; then
+                copy_up "$file"
                 if [[ "$pin" == '--pin' ]]; then
                         dbg "PIN ${file}"
-                        mkdir -p "$WTFSCACHEMETA/precious/${file%/*}"
+                        local dir="/${file}"
+                        dir="${dir%/*}"
+                        mkdir -p "$WTFSCACHEMETA/precious/$dir}"
                         [[ -f "$WTFSCACHEMETA/cache/${file}" ]] && mv "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/precious/${file}"
                 fi
         #PLANNED: else pattern?
@@ -353,10 +367,11 @@ function drop ()
     setup "$1"
 
     for i in "$@"; do
-        if [[ -f "$i" ]]; then
-                local file="$(normalize_filename "$i")"
+        local file="$(normalize_filename "$i")"
+        if [[ -f "$WTFSCACHEMOUNT/$file" ]]; then
                 dbg "DROP ${file}"
 
+                #TODO: check for existence in remote
                 [[ -f "$WTFSCACHEMETA/cache/${file}" ]] && rm "$WTFSCACHEMETA/cache/${file}"
 
                 if [[ -f "$WTFSCACHEMETA/precious/${file}" ]]; then
@@ -365,6 +380,32 @@ function drop ()
                         else
                             dbg "PINNED ${file}"
                         fi
+                fi
+        #PLANNED: else pattern?
+        fi
+    done
+}
+
+
+function detach ()
+{
+    setup "$1"
+
+    for i in "$@"; do
+        local file="$(normalize_filename "$i")"
+        if [[ -f "$WTFSCACHEMOUNT/$file" && ! -f "$WTFSCACHEMETA/local/${file}" ]]; then
+                copy_up "$file"
+                dbg "DETACH ${file}"
+                local dir="/${file}"
+                dir="${dir%/*}"
+
+                mkdir -p "$WTFSCACHEMETA/local/$dir"
+                if [[ -f "$WTFSCACHEMETA/cache/${file}" ]]; then
+                        mv "$WTFSCACHEMETA/cache/${file}" "$WTFSCACHEMETA/local/${file}"
+                elif [[ -f "$WTFSCACHEMETA/precious/${file}" ]]; then
+                        mv "$WTFSCACHEMETA/precious/${file}" "$WTFSCACHEMETA/local/${file}"
+                else
+                    dbg "NOT_AVAILABLE ${file}"
                 fi
         #PLANNED: else pattern?
         fi
@@ -401,6 +442,10 @@ pin)
     shift
     get --pin "$@"
     ;;
+detach)
+    shift
+    detach "$@"
+    ;;
 drop)
     shift
     drop "$@"
@@ -412,10 +457,10 @@ EVENT)
         :
         ;;
     "OPEN "*)
-        copy_up "${*##OPEN }"
+        copy_up "${1##OPEN $WTFSCACHE/}"
         ;;
     "CLOSE_WRITE,CLOSE "*)
-        commit "${*##CLOSE_WRITE,CLOSE }"
+        commit "${1##CLOSE_WRITE,CLOSE $WTFSCACHE/}"
         ;;
     *)
         die "unhandled event $@"
