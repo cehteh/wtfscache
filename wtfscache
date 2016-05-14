@@ -280,7 +280,10 @@ function wtfscache_start ()
     [[ "$status" == 'connected' ]] && auto_merge &
 
     # loop? restart? what about new dirs?
-    inotifywait -m -r --format '%e %w%f' -e open,close_write "$WTFSCACHE" | xargs -d '\n' -l -P 32 -n1 $0 EVENT
+    inotifywait -m -r --format '%e %w%f' -e open,close_write "$WTFSCACHE" |
+            while read -r; do
+                $0 EVENT "$REPLY" &
+            done
 
     dbg "
 DONE"
