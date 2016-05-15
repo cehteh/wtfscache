@@ -45,19 +45,20 @@ drop <files> ::
   removes files from the cache. With '--pin' as fist option, drops pinned files.
 
 
-// PLANNED:
+disconnect <name> ::
+  manual disconnected operation
 
-// disconnect <name> ::
-//   manual disconnected operation
+connect <name> ::
+  reconnect after a (manual) disconnection
 
-// connect <name> ::
-//   reconnect after a (manual) disconnection
+detach <files..> ::
+  detach files from the remote, keep edits local
 
-// detach <files..> ::
-//   detach files from the remote, keep edits local
+status <name|files..> ::
+  print some infos
 
-// status <name> ::
-//   print some infos
+ merge <files..> ::
+  merge detached files back to the remote
 
 // prune <files..> ::
 //   remove a file, including backups, also from master
@@ -65,8 +66,6 @@ drop <files> ::
 //   --backups including backups
 //   --all same as --master --backups
 
-// merge <files..> ::
-//   merge detached files back to the remote
 
 // undelete <files..> ::
 //   restores a deleted file
@@ -156,17 +155,14 @@ later:
 WTFSCACHE ::
   basename of the cache
 
-WTFSCACHEROOT ::
-  path to the cache root
-
 WTFSCACHEMOUNT ::
   path where the visible user dir is mounted
 
 WTFSCACHEMETA ::
   path for metadata
 
-WTFSCACHETMP ::
-  path for tempfiles
+WTFSCACHERAPO ::
+  path for cache repositories
 
 
 status ::

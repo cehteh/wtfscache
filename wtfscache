@@ -12,31 +12,6 @@ export startup
 export master_timeout
 export master_poll
 
-#DONE: start:: start the daemon
-#DONE: pin:: files to a 'precious' dir which doesnt get garbage collected
-#DONE: get:: force caching the given files
-#DONE: drop:: files from the cache --pin drops pinned files
-#DONE: config loader
-#DONE: status file
-#DONE: disconnect:: manual disconnected operation
-#DONE: connect:: reconnect after a (manual) disconnection
-#DONE: fix offline detection
-#DONE: init:: setup a template
-#DONE: status:: print some infos
-#DONE: detach/local:: detach files from the remote, keep edits local
-#DONE: merge:: merge detached files back to the remote
-#DONE: detach offline commits
-#DONE: automerge:: merge detached files back to the remote
-#DONE: logfile for files which need to be merged (automatically detached)
-#DONE: stop:: stop command
-#DONE: global cache, move metadata to ~/.wtfscache/<md5sum>/
-
-#v0.1:
-
-#PLANNED: global config for gc etc
-
-#later:
-
 #PLANNED: destroy command
 #PLANNED: config for merge (auto/manual)
 #PLANNED: ignore patterns for copy_up, config copyup behaviour
