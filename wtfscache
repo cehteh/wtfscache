@@ -35,8 +35,8 @@ export master_poll
 
 #v0.1:
 
-#PLANNED: global cache, move metadata to ~/.wtfscache/<md5sum>/
 #PLANNED: global config for gc etc
+#PLANNED: global cache, move metadata to ~/.wtfscache/<md5sum>/
 
 
 #later:
@@ -51,6 +51,7 @@ export master_poll
 #TODO: ???:: propagate deleted files to the remote mode=writeback, local, deletes
 #TODO: undelete/undo/history:: work with backup files and whiteouts
 #TODO: clean/gc:: manual gc run
+#PLANNED: gc priorities, add time ofsets/factors
 #TODO: caching/copy_up configureable, only cow by pattern?
 #PLANNED: --connect/--disconnect option for start
 #FIXME: filenames with leading/trailing spaces

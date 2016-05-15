@@ -81,10 +81,18 @@ drop <files> ::
 //   manual gc run, until size MB space become available or
 //   clean the complete cache.
 
-=== Config
+=== GC Config
 
 min_free ::
   Starting garbage collector when less then this MB space is free.
+
+max_free ::
+  Stopping the gc when this much MB space is free.
+
+=== Cache Config
+
+gczone ::
+  name of the GC zone to use
 
 max_free ::
   Stopping the gc when this much MB space is free.
@@ -107,6 +115,8 @@ backups ::
   simple :::
     make simple backups
 
+
+
 //Planned:
 //write=detach, backup
 //merge=auto,manual
@@ -120,17 +130,20 @@ backups ::
 
 For caching under 'test':
 
- test/                   The user visible mountpoint of the cache
- .test/                  Hidden dir with the internals
- .test/config            configuration
- .test/status            current status
+ ~/somewhere/test/                   The user visible mountpoint of the cache
+   ..==somewhere/test
 
- .test/master/           mountpoint for the remote master filesystem
- .test/local/            'detached' files which have no replica in master
- .test/precious/         'pinned' files which should not be gc'ed
- .test/cache/            cache area which gets gc'ed
+ .wtfscache/                           per-user metadata dir
+ .wtfscache/*.gcconf                   garbage collector config for zone *
+ .wtfscache/../config                  config for a mountpoint
+ .wtfscache/../status                  current status
 
- .test/detached.log      log of files which got automatically detached
+ .wtfscache/../repo/                   repo may be link to another volume
+ .wtfscache/../repo/master/            mountpoint for the remote master filesystem
+ .wtfscache/../repo/local/             'detached' files which have no replica in master
+ .wtfscache/../repo/precious/          'pinned' files which should not be gc'ed
+ .wtfscache/../repo/cache/             cache area which gets gc'ed
+ .wtfscache/../repo/detached.log       log of files which got automatically detached
 
 
 later:
