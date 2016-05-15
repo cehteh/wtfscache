@@ -6,6 +6,7 @@ export WTFSCACHEMOUNT
 export WTFSCACHEMETA
 export WTFSCACHEREPO
 
+export gczone
 export remote
 export backups
 export startup
@@ -158,6 +159,7 @@ function commit ()
             elif [[ "$merge" == '--merge' && -f "$WTFSCACHEREPO/local/${1}" ]]; then
                     cp --backup="$backups" "$WTFSCACHEREPO/local/${1}" "$WTFSCACHEREPO/master/${1}"
             fi
+            gc
     else
         if [[ -f "$WTFSCACHEREPO/cache/${1}" ]]; then
                 echo "cached ${1}" >>"$WTFSCACHEREPO/detached.log"
@@ -307,7 +309,7 @@ function wtfscache_init ()
     repo="$(readlink -m "$repo")"
 
     if [[ "$repo" == "$WTFSCACHEMETA/repo" ]]; then
-       mkdir -p "$WTFSCACHE/repo" >&/dev/null
+       mkdir -p "$WTFSCACHEMETA/repo" >&/dev/null
     else
        mkdir -p "$repo" >&/dev/null
        [[ -d "$repo" ]] || die "NOT A DIR $repo"
@@ -472,9 +474,10 @@ function merge ()
 
 function auto_merge ()
 {
-    if [[ -f "$WTFSCACHEMETA/detached.log" ]]; then
+    if [[ -f "$WTFSCACHEREPO/detached.log" ]]; then
             while read where file; do
                 if [[ -f "$WTFSCACHEREPO/local/${file}" ]]; then
+                        dbg "AUTO_MERGE $file"
                         commit --merge "$file"
                         if [[ "$where" == 'cached' ]]; then
                                 mv "$WTFSCACHEREPO/local/${file}" "$WTFSCACHEREPO/cache/${file}"
@@ -482,8 +485,8 @@ function auto_merge ()
                                 mv "$WTFSCACHEREPO/local/${file}" "$WTFSCACHEREPO/precious/${file}"
                         fi
                 fi
-            done <"$WTFSCACHEMETA/detached.log"
-            rm "$WTFSCACHEMETA/detached.log"
+            done <"$WTFSCACHEREPO/detached.log"
+            rm "$WTFSCACHEREPO/detached.log"
     fi
 }
 
