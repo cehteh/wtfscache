@@ -13,7 +13,9 @@ export startup
 export master_timeout
 export master_poll
 
-#PLANNED: destroy command
+#PLANNED: daemon
+#PLANNED: fsck
+#PLANNED: destroy command / unwtf / import
 #PLANNED: config for merge (auto/manual)
 #PLANNED: ignore patterns for copy_up, config copyup behaviour
 #PLANNED: gc pinned files for min_free
@@ -59,10 +61,10 @@ function gc ()
             while (($(disk_free "$WTFSCACHEREPO/cache/.") < $max_free)); do
                 read _ file || break
                 dbg "RM $file"
+                #FIXME: verify that file exists on master
                 [[ -f "$file" ]] && rm "$file"
             done <"$HOME/.wtfscache/$gczone.lst"
 
-            #prune empty dirs
             find "$HOME/.wtfscache" -not -path '*/repo/*' -and -name 'config' -exec grep -l "gczone='$gczone'" {} + |
                     while read file; do
                         find "${file%/config}/repo/cache" -type d -empty -delete
