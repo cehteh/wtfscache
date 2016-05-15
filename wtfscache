@@ -6,8 +6,6 @@ export WTFSCACHEMOUNT
 export WTFSCACHEMETA
 export WTFSCACHEREPO
 
-export min_free
-export max_free
 export remote
 export backups
 export startup
@@ -73,22 +71,37 @@ function disk_free ()
 
 function gc ()
 {
-    : #FIXME: per user global gc
-    # dbg "GC $(disk_free "$WTFSCACHEMETA/cache/.")"
-    # if [[ ! -f "$WTFSCACHEMETA/$$.lst" ]] && (($(disk_free "$WTFSCACHEMETA/cache/.") <= $min_free)); then
-    #         find "$WTFSCACHEMETA/cache" -type f -not -name '*_HIDDEN~' -printf '%A@ %p\n' | sort -n  >"$WTFSCACHEMETA/$$.lst"
+    dbg "GC AVAILABLE $(disk_free "$WTFSCACHEREPO/cache/.")"
+    source "$HOME/.wtfscache/$gczone.gcconf"
 
-    #         while (($(disk_free "$WTFSCACHEMETA/cache/.") < $max_free)); do
-    #             read _ file || break
-    #             dbg "RM $file"
-    #             #FIXME: only when proven that file exist on remote
-    #             [[ -f $file ]] && rm "$file"
-    #         done <"$WTFSCACHEMETA/$$.lst"
+    if [[ ! -f "$HOME/.wtfscache/$gczone.lst" ]] && (($(disk_free "$WTFSCACHEREPO/cache/.") <= $min_free)); then
+            find "$HOME/.wtfscache" -not -path '*/repo/*' -and -name 'config' -exec grep -l "gczone='$gczone'" {} + |
+                    while read file; do
+                        find "${file%/config}/repo/cache" -type f -not -name '*_HIDDEN~' -printf '%A@ %p\n'
+                    done | sort -n  >>"$HOME/.wtfscache/$gczone.lst"
 
-    #         #TODO: prune empty dirs
-    #         rm "$WTFSCACHEMETA/$$.lst"
-    # fi
+            while (($(disk_free "$WTFSCACHEREPO/cache/.") < $max_free)); do
+                read _ file || break
+                dbg "RM $file"
+                [[ -f "$file" ]] && rm "$file"
+            done <"$HOME/.wtfscache/$gczone.lst"
+
+            #prune empty dirs
+            find "$HOME/.wtfscache" -not -path '*/repo/*' -and -name 'config' -exec grep -l "gczone='$gczone'" {} + |
+                    while read file; do
+                        find "${file%/config}/repo/cache" -type d -empty -delete
+                    done
+
+            rm "$HOME/.wtfscache/$gczone.lst"
+    fi
 }
+
+function wtfscache_gc ()
+{
+    setup "$1"
+    gc
+}
+
 
 function check_connection ()
 {
