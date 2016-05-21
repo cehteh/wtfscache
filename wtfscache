@@ -84,18 +84,15 @@ function wtfscache_gc ()
 function check_connection ()
 {
     source "$WTFSCACHEMETA/status"
-    if [[ "$status" != disconnected ]]; then
-            if { timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEREPO/master/."; } 2>/dev/null ; then
-                    if [[ "$status" == offline ]]; then
-                            status=connected
-                            write_status
-                            auto_merge
-                    fi
-            else
-                if [[ "$status" == connected ]]; then
-                        status=offline
-                        write_status
-                fi
+    if [[ "$status" == connected ]] && ! { timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEREPO/master/."; } 2>/dev/null ; then
+            fusermount -u -z "$WTFSCACHEREPO/master"
+            status=offline
+            write_status
+    elif [[ "$status" == offline ]]; then
+            if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEREPO/master" >&/dev/null; then
+                    status=connected
+                    write_status
+                    auto_merge
             fi
     fi
 }
@@ -110,6 +107,7 @@ function poll_connection ()
 function wtfscache_disconnect ()
 {
     setup "$1"
+    fusermount -u -z "$WTFSCACHEREPO/master"
     status=disconnected
     write_status
 }
@@ -117,7 +115,14 @@ function wtfscache_disconnect ()
 function wtfscache_connect ()
 {
     setup "$1"
-    status=connected
+
+    if [[ "$status" != connected ]]; then
+            if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEREPO/master"; then
+                status=connected
+            else
+                status=offline
+            fi
+    fi
     write_status
     auto_merge
 }
