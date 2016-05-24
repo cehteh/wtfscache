@@ -85,22 +85,34 @@ function check_connection ()
 {
     source "$WTFSCACHEMETA/status"
     if [[ "$status" == connected ]] && ! { timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEREPO/master/."; } 2>/dev/null ; then
-            fusermount -u -z "$WTFSCACHEREPO/master"
-            status=offline
-            write_status
-    elif [[ "$status" == offline ]]; then
-            if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEREPO/master" >&/dev/null; then
-                    status=connected
-                    write_status
-                    auto_merge
-            fi
+            status=connection_lost
+            #write_status
     fi
 }
+
 
 function poll_connection ()
 {
     while sleep "$master_poll"; do
-        check_connection
+        source "$WTFSCACHEMETA/status"
+
+        if [[ "$status" == connected ]] && ! { timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEREPO/master/."; } 2>/dev/null ; then
+                status=connection_lost
+                write_status
+        elif [[ "$status" == connection_lost ]]; then
+                if { ! timeout -s9 ${master_timeout} touch -ac "$WTFSCACHEREPO/master/."; } 2>/dev/null ; then
+                        status=offline
+                else
+                    status=connected
+                fi
+                write_status
+        elif [[ "$status" == offline ]]; then
+                if sshfs -o compression=yes,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,idmap=user "$remote" "$WTFSCACHEREPO/master" >&/dev/null; then
+                        status=connected
+                        write_status
+                        auto_merge
+                fi
+        fi
     done
 }
 
